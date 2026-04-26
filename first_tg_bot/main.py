@@ -1,60 +1,72 @@
 import asyncio
-import logging
-import sys
-from dotenv import load_dotenv
-import os
+from os import getenv
+from dotenv import load_dotenv # type: ignore
+import requests
 
-from aiogram import Bot, Dispatcher, html
-from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode
-from aiogram.filters import CommandStart
-from aiogram.types import Message
+from aiogram import Bot, Dispatcher # type: ignore
+from aiogram.filters import CommandStart, Command # type: ignore
+from aiogram.types import Message # type: ignore
 
-load_dotenv(); # Reads the .env file and sets environment variables
+if (requests.get("https://api.telegram.org").status_code == 200):
+    print("Соединение с api.telegram.org прошло успешно")
+else:
+    print("Ошибка. Нет соединения с api.telegram.org")
 
-# Bot token can be obtained via https://t.me/BotFather
-TOKEN = os.getenv("BOT_TOKEN")
-
-# All handlers should be attached to the Router (or Dispatcher)
+# выдаёт 200, значит успешно
 
 dp = Dispatcher()
+load_dotenv()
+
+user_messages = {} 
+
+async def send_and_track(message: Message, text: str):
+    user_id = message.from_user.id
+
+    user_messages.setdefault(user_id, [])  
+    
+    user_messages[user_id].append(message.message_id)
+
+    msg = await message.answer(text)
+
+    user_messages[user_id].append(msg.message_id)
+
+    return msg
 
 @dp.message(CommandStart())
-async def command_start_handler(message: Message) -> None:
-    """
-    This handler receives messages with `/start` command
-    """
-    # Most event objects have aliases for API methods that can be called in events' context
-    # For example if you want to answer to incoming message you can use `message.answer(...)` alias
-    # and the target chat will be passed to :ref:`aiogram.methods.send_message.SendMessage`
-    # method automatically or call API method directly via
-    # Bot instance: `bot.send_message(chat_id=message.chat.id, ...)`
-    await message.answer(f"Hello, {html.bold(message.from_user.full_name)}!")
+async def start_handler(message: Message) -> None:
+    await send_and_track(message, "Привет! Я clanker. Могу только повторять тебя).")
 
+@dp.message(Command("clear"))
+async def clear_handler(message: Message):
+    user_id = message.from_user.id
+
+    user_messages.setdefault(user_id, []).append(message.message_id) 
+
+    ids = user_messages.get(user_id, [])
+
+    print("IDs:", ids) # для проверки получения id-шников
+
+    if not ids:
+        await message.answer("Нечего удалять(")
+        return
+    
+    await message.bot.delete_messages(
+        chat_id = message.chat.id,
+        message_ids = ids
+    )
+
+    user_messages[user_id] = [] # Очистка списка
 
 @dp.message()
 async def echo_handler(message: Message) -> None:
-    """
-    Handler will forward receive a message back to the sender
-
-    By default, message handler will handle all message types (like a text, photo, sticker etc.)
-    """
-    try:
-        # Send a copy of the received message
-        await message.send_copy(chat_id=message.chat.id)
-    except TypeError:
-        # But not all the types is supported to be copied so need to handle it
-        await message.answer("Nice try!")
-
+    await send_and_track(message, f"Ты написал: {message.text}")
 
 async def main() -> None:
-    # Initialize Bot instance with default bot properties which will be passed to all API calls
-    bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-
-    # And the run events dispatching
+    TOKEN = getenv("BOT_TOKEN")
+    if TOKEN is None:
+        raise ValueError("BOT_TOKEN is not set")
+    bot = Bot(token=TOKEN) 
     await dp.start_polling(bot)
 
-
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, stream=sys.stdout)
     asyncio.run(main())
