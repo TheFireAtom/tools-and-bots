@@ -8,6 +8,8 @@ from aiogram.filters import CommandStart, Command # type: ignore
 from aiogram.types import Message # type: ignore
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 
+from collections import defaultdict
+
 if (requests.get("https://api.telegram.org").status_code == 200):
     print("Соединение с api.telegram.org прошло успешно")
 else:
@@ -18,14 +20,18 @@ load_dotenv()
 
 user_messages = {} 
 
-async def send_and_track(message: Message, text: str, **kwargs):    # туть остановился :)
+async def send_and_track(message: Message, text: str, **kwargs):
     user_id = message.from_user.id
-    user_messages.setdefault(user_id, [])  
-    
+
+    user_messages.setdefault(user_id, [])
+
+    # save user message
     user_messages[user_id].append(message.message_id)
 
-    msg = await message.answer(text)
+    # send bot message
+    msg = await message.answer(text, **kwargs)
 
+    # save bot message
     user_messages[user_id].append(msg.message_id)
 
     return msg
@@ -37,16 +43,22 @@ async def start_handler(message: Message):
         [InlineKeyboardButton(text="Очистить", callback_data="clear")]
     ])
 
-    await message.answer("Выберите опцию:", reply_markup=keyboard)
+    await send_and_track(message, "Выберите опцию: " , reply_markup=keyboard)
 
 @dp.callback_query()
 async def handle_callback(callback: CallbackQuery):
     await callback.answer()
 
     if callback.data == "click":
-        await callback.message.answer("Фишки работают!!!")
+        
+        # старая версия
+        user_id = callback.from_user.id
+        bot_message = await callback.message.answer("Фишки работают!!!") 
+        user_messages.setdefault(user_id, []).append(bot_message.message_id) 
 
-    elif callback.data == "clear":
+        # await send_and_track(callback.message, "Фишки работают!")
+
+    if callback.data == "clear":
         user_id = callback.from_user.id
         ids = user_messages.get(user_id, [])
 
