@@ -20,19 +20,17 @@ load_dotenv()
 
 user_messages = {} 
 
-async def send_and_track(message: Message, text: str, **kwargs):
-    user_id = message.from_user.id
+async def send_and_track(message: Message, text: str, user_id=None, **kwargs):
 
-    user_messages.setdefault(user_id, [])
+    if user_id is None: 
+        user_id = message.from_user.id
 
-    # save user message
-    user_messages[user_id].append(message.message_id)
-
-    # send bot message
     msg = await message.answer(text, **kwargs)
 
-    # save bot message
-    user_messages[user_id].append(msg.message_id)
+    user_messages.setdefault(user_id, []).append(msg.message_id)
+    user_messages[user_id].append(message.message_id)
+
+    print("New ID's", user_messages[user_id])
 
     return msg
 
@@ -52,11 +50,13 @@ async def handle_callback(callback: CallbackQuery):
     if callback.data == "click":
         
         # старая версия
-        user_id = callback.from_user.id
-        bot_message = await callback.message.answer("Фишки работают!!!") 
-        user_messages.setdefault(user_id, []).append(bot_message.message_id) 
+        # user_id = callback.from_user.id
+        # bot_message = await callback.message.answer("Фишки работают!!!") 
+        # user_messages.setdefault(user_id, []).append(bot_message.message_id) 
 
-        # await send_and_track(callback.message, "Фишки работают!")
+        # print("Old ID's", user_messages[user_id])
+
+        await send_and_track(callback.message, "Фишки работают!", user_id=callback.from_user.id)
 
     if callback.data == "clear":
         user_id = callback.from_user.id
@@ -68,6 +68,8 @@ async def handle_callback(callback: CallbackQuery):
                 message_ids = ids
             )
 
+        print("Deleted: ", user_messages)
+
         user_messages[user_id] = []
 
 @dp.message(Command("clear"))
@@ -78,7 +80,7 @@ async def clear_handler(message: Message):
 
     ids = user_messages.get(user_id, [])
 
-    print("IDs:", ids) # для проверки получения id-шников
+    # print("IDs:", ids) # для проверки получения id-шников
 
     if not ids:
         await message.answer("Нечего удалять(")
