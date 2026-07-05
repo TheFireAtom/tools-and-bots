@@ -3,52 +3,29 @@ from aiogram.filters import CommandStart
 from aiogram.types import Message, CallbackQuery
 
 from keyboards import main_menu_keyboard, back_to_menu_keyboard
+from texts import (
+    WELCOME_TEXT,
+    SERVICES_TEXT,
+    PRICE_TEXT,
+    CONTACTS_TEXT,
+    PORTFOLIO_TEXT,
+)
 
 # Router — это способ группировать хендлеры отдельно от main.py.
 # Удобно, когда бот вырастет и хендлеров станет много.
 router = Router()
 
+async def safe_edit(callback: CallbackQuery, text: str, keyboard) -> None:
+    """
+    Безопасно редактирует сообщение под кнопкой.
 
-# ---------- Тексты (в реальном проекте это можно вынести в отдельный texts.py) ----------
-
-WELCOME_TEXT = (
-    "👋 Привет! Я бот-визитка компании <b>Example Studio</b>.\n\n"
-    "Здесь ты можешь узнать про наши услуги, цены и связаться с нами.\n"
-    "Выбери, что тебя интересует 👇"
-)
-
-SERVICES_TEXT = (
-    "📋 <b>Наши услуги:</b>\n\n"
-    "• Разработка Telegram-ботов\n"
-    "• Автоматизация бизнес-процессов\n"
-    "• Интеграция с внешними сервисами (оплата, CRM, API)\n"
-    "• Поддержка и доработка существующих ботов"
-)
-
-PRICE_TEXT = (
-    "💰 <b>Прайс (ориентировочно):</b>\n\n"
-    "• Простой бот-визитка — от 3 000 ₽\n"
-    "• Бот с анкетой/квизом — от 5 000 ₽\n"
-    "• Бот-магазин с оплатой — от 15 000 ₽\n"
-    "• Индивидуальный проект — расчёт по ТЗ\n\n"
-    "Точная цена зависит от сложности задачи."
-)
-
-CONTACTS_TEXT = (
-    "📞 <b>Контакты:</b>\n\n"
-    "Telegram: @your_username\n"
-    "Email: example@example.com\n\n"
-    "Напиши нам — обсудим твою задачу!"
-)
-
-PORTFOLIO_TEXT = (
-    "⭐ <b>Портфолио:</b>\n\n"
-    "1. Бот-каталог для интернет-магазина\n"
-    "2. Бот для записи на консультации\n"
-    "3. Бот-опросник с сохранением результатов\n\n"
-    "(Здесь можно добавить ссылки на реальные проекты, когда они появятся)"
-)
-
+    callback.message в aiogram имеет тип Message | InaccessibleMessage.
+    InaccessibleMessage — редкий случай (например, сообщение слишком старое
+    или было удалено), и у него НЕТ метода edit_text. Поэтому сначала
+    проверяем, что перед нами настоящий Message, и только потом редактируем.
+    """
+    if isinstance(callback.message, Message):
+        await callback.message.edit_text(text, reply_markup=keyboard)
 
 # ---------- Хендлеры ----------
 
@@ -60,29 +37,29 @@ async def cmd_start(message: Message):
 
 @router.callback_query(F.data == "services")
 async def show_services(callback: CallbackQuery):
-    await callback.message.edit_text(SERVICES_TEXT, reply_markup=back_to_menu_keyboard())
+    await safe_edit(callback, SERVICES_TEXT, back_to_menu_keyboard())
     await callback.answer()  # убирает "часики" на кнопке
 
 
 @router.callback_query(F.data == "price")
 async def show_price(callback: CallbackQuery):
-    await callback.message.edit_text(PRICE_TEXT, reply_markup=back_to_menu_keyboard())
+    await safe_edit(callback, PRICE_TEXT, back_to_menu_keyboard())
     await callback.answer()
 
 
 @router.callback_query(F.data == "contacts")
 async def show_contacts(callback: CallbackQuery):
-    await callback.message.edit_text(CONTACTS_TEXT, reply_markup=back_to_menu_keyboard())
+    await safe_edit(callback, CONTACTS_TEXT, back_to_menu_keyboard())
     await callback.answer()
 
 
 @router.callback_query(F.data == "portfolio")
 async def show_portfolio(callback: CallbackQuery):
-    await callback.message.edit_text(PORTFOLIO_TEXT, reply_markup=back_to_menu_keyboard())
+    await safe_edit(callback, PORTFOLIO_TEXT, back_to_menu_keyboard())
     await callback.answer()
 
 
 @router.callback_query(F.data == "back_to_menu")
 async def back_to_menu(callback: CallbackQuery):
-    await callback.message.edit_text(WELCOME_TEXT, reply_markup=main_menu_keyboard())
+    await safe_edit(callback, WELCOME_TEXT, main_menu_keyboard())
     await callback.answer()
