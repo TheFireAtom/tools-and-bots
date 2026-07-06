@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import os
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
@@ -8,14 +7,6 @@ from aiogram.enums import ParseMode
 
 from config import BOT_TOKEN
 from handlers import router
-
-from dotenv import load_dotenv
-from typing import cast
-
-load_dotenv()
-
-#BOT_TOKEN = os.getenv("BOT_TOKEN")
-
 
 async def main():
     # Настройка логов — полезно для отладки, увидишь ошибки в консоли

@@ -52,7 +52,7 @@ async def show_contacts(callback: CallbackQuery):
     await safe_edit(callback, CONTACTS_TEXT, back_to_menu_keyboard())
     await callback.answer()
 
-
+ 
 @router.callback_query(F.data == "portfolio")
 async def show_portfolio(callback: CallbackQuery):
     await safe_edit(callback, PORTFOLIO_TEXT, back_to_menu_keyboard())
