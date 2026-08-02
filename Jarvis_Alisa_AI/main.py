@@ -8,14 +8,18 @@ from scipy.io.wavfile import write
 from dotenv import load_dotenv
 import openwakeword
 from openwakeword.model import Model
+from win11toast import notify
+import pygame
 
 load_dotenv()
 
 API_KEY = os.getenv("API_KEY")
 FOLDER_ID = os.getenv("FOLDER_ID")
 
-# openwakeword.utils.download_models()  # раскомментируй при первом запуске, потом можно закомментировать
+# openwakeword.utils.download_models()  # раскомментируй при первом запуске
 owwModel = Model(wakeword_models=["hey_jarvis"])
+
+pygame.mixer.init()
 
 
 # ---------- Запись и распознавание речи ----------
@@ -30,11 +34,7 @@ def record_audio(filename="input.wav", duration=5, samplerate=16000):
 
 def speech_to_text(filename="input.wav"):
     url = "https://stt.api.cloud.yandex.net/speech/v1/stt:recognize"
-
-    headers = {
-        "Authorization": f"Api-Key {API_KEY}"
-    }
-
+    headers = {"Authorization": f"Api-Key {API_KEY}"}
     params = {
         "folderId": FOLDER_ID,
         "lang": "ru-RU",
@@ -74,11 +74,7 @@ def listen_for_wake_word():
 
 def perform_actual_search(query):
     url = "https://api.duckduckgo.com/"
-    params = {
-        "q": query,
-        "format": "json",
-        "no_html": 1
-    }
+    params = {"q": query, "format": "json", "no_html": 1}
     response = requests.get(url, params=params)
     data = response.json()
 
@@ -97,7 +93,6 @@ def perform_actual_search(query):
 
 def ask_gpt_with_tools(user_text, system_prompt="Ты дружелюбный ассистент по имени Джарвис."):
     url = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
-
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Api-Key {API_KEY}",
@@ -112,10 +107,7 @@ def ask_gpt_with_tools(user_text, system_prompt="Ты дружелюбный а�
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": "Поисковый запрос"
-                        }
+                        "query": {"type": "string", "description": "Поисковый запрос"}
                     },
                     "required": ["query"]
                 }
@@ -130,11 +122,7 @@ def ask_gpt_with_tools(user_text, system_prompt="Ты дружелюбный а�
 
     payload = {
         "modelUri": f"gpt://{FOLDER_ID}/yandexgpt/rc",
-        "completionOptions": {
-            "stream": False,
-            "temperature": 0.6,
-            "maxTokens": 500
-        },
+        "completionOptions": {"stream": False, "temperature": 0.6, "maxTokens": 500},
         "messages": messages,
         "tools": tools
     }
@@ -156,12 +144,7 @@ def ask_gpt_with_tools(user_text, system_prompt="Ты дружелюбный а�
                     "role": "assistant",
                     "toolResultList": {
                         "toolResults": [
-                            {
-                                "functionResult": {
-                                    "name": "web_search",
-                                    "content": search_result
-                                }
-                            }
+                            {"functionResult": {"name": "web_search", "content": search_result}}
                         ]
                     }
                 })
@@ -172,6 +155,35 @@ def ask_gpt_with_tools(user_text, system_prompt="Ты дружелюбный а�
         return final_result["result"]["alternatives"][0]["message"]["text"]
 
     return alternative["message"]["text"]
+
+
+# ---------- Синтез речи (TTS) ----------
+
+def text_to_speech(text, output_file="response.ogg"):
+    url = "https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize"
+    headers = {"Authorization": f"Api-Key {API_KEY}"}
+    data = {
+        "text": text,
+        "lang": "ru-RU",
+        "voice": "jane",
+        "folderId": FOLDER_ID
+    }
+    response = requests.post(url, headers=headers, data=data)
+    with open(output_file, "wb") as f:
+        f.write(response.content)
+
+
+def play_audio(filename="response.ogg"):
+    pygame.mixer.music.load(filename)
+    pygame.mixer.music.play()
+    while pygame.mixer.music.get_busy():
+        pygame.time.Clock().tick(10)
+
+
+# ---------- Уведомления ----------
+
+def show_notification(title, message):
+    notify(title, message, duration="short")
 
 
 # ---------- Системные команды ----------
@@ -204,6 +216,15 @@ def handle_command(user_text):
         return ask_gpt_with_tools(user_text)
 
 
+# ---------- Ответ пользователю (уведомление + голос) ----------
+
+def respond(answer):
+    print(f"Джарвис: {answer}")
+    show_notification("Джарвис", answer)
+    text_to_speech(answer)
+    play_audio()
+
+
 # ---------- Основной цикл ----------
 
 def jarvis_full_loop():
@@ -219,7 +240,7 @@ def jarvis_full_loop():
                 break
 
             answer = handle_command(command_text)
-            print(f"Джарвис: {answer}")
+            respond(answer)
         except Exception as e:
             print(f"Ошибка в цикле: {e}")
             continue
