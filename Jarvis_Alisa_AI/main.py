@@ -4,6 +4,8 @@ import time
 import subprocess
 import threading
 import tkinter as tk
+import numpy as np
+import collections
 
 import requests
 import sounddevice as sd
@@ -64,19 +66,22 @@ def speech_to_text(filename="input.wav"):
 def listen_for_wake_word():
     print("Жду слово 'Jarvis'...")
     samplerate = 16000
-    chunk_duration = 1
+    chunk_size = int(0.25 * samplerate)  # проверяем каждые 0.25 сек вместо 1 сек
+    buffer = collections.deque(maxlen=samplerate * 2)  # скользящее окно на 1.5 секунды
 
     while True:
-        audio_chunk = sd.rec(int(chunk_duration * samplerate), samplerate=samplerate, channels=1, dtype='int16')
+        chunk = sd.rec(chunk_size, samplerate=samplerate, channels=1, dtype='int16')
         sd.wait()
-        audio_chunk = audio_chunk.flatten()
+        buffer.extend(chunk.flatten())
 
-        prediction = owwModel.predict(audio_chunk)
+        if len(buffer) >= samplerate:  # ждём, пока накопится хотя бы 1 секунда данных
+            audio_window = np.array(buffer)
+            prediction = owwModel.predict(audio_window)
 
-        for wakeword, score in prediction.items():
-            if score > 0.4:
-                print("Джарвис активирован!")
-                return True
+            for wakeword, score in prediction.items():
+                if score > 0.2:
+                    print("Джарвис активирован!")
+                    return True
 
 
 # ---------- Веб-поиск (DuckDuckGo) ----------
@@ -404,7 +409,7 @@ def respond(answer):
     print(f"Джарвис: {answer}")
     show_text_window("Джарвис", answer)
     text_to_speech(answer)
-    play_audio()
+    play_audio()    
 
 
 # ---------- Основной цикл ----------
