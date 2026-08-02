@@ -24,7 +24,7 @@ FOLDER_ID = os.getenv("FOLDER_ID")
 WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")
 
 # openwakeword.utils.download_models()  # раскомментируй при первом запуске на новой машине
-owwModel = Model(wakeword_models=["hey_jarvis"])
+owwModel = Model(wakeword_models=["hey_jarvis"], inference_framework="onnx")
 
 pygame.mixer.init()
 
