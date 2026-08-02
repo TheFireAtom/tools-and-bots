@@ -1,25 +1,34 @@
 import os
+import re
+import time
 import subprocess
-import webbrowser
+import threading
+import tkinter as tk
+
 import requests
-import numpy as np
 import sounddevice as sd
+import pygame
+import pyautogui
+import pyperclip
 from scipy.io.wavfile import write
 from dotenv import load_dotenv
 import openwakeword
 from openwakeword.model import Model
-from win11toast import notify
-import pygame
 
 load_dotenv()
 
 API_KEY = os.getenv("API_KEY")
 FOLDER_ID = os.getenv("FOLDER_ID")
+WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")
 
-# openwakeword.utils.download_models()  # раскомментируй при первом запуске
+# openwakeword.utils.download_models()  # раскомментируй при первом запуске на новой машине
 owwModel = Model(wakeword_models=["hey_jarvis"])
 
 pygame.mixer.init()
+
+NOTES_FILE = "notes.txt"
+last_answer = ""
+stop_flag = threading.Event()
 
 
 # ---------- Запись и распознавание речи ----------
@@ -159,31 +168,85 @@ def ask_gpt_with_tools(user_text, system_prompt="Ты дружелюбный а�
 
 # ---------- Синтез речи (TTS) ----------
 
-def text_to_speech(text, output_file="response.ogg"):
+def text_to_speech(text, output_file="response.mp3"):
     url = "https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize"
     headers = {"Authorization": f"Api-Key {API_KEY}"}
     data = {
         "text": text,
         "lang": "ru-RU",
-        "voice": "jane",
-        "folderId": FOLDER_ID
+        "voice": "ermil",
+        "emotion": "neutral",
+        "folderId": FOLDER_ID,
+        "format": "mp3"
     }
     response = requests.post(url, headers=headers, data=data)
+
+    if response.status_code != 200:
+        print("TTS ошибка:", response.text)
+        return
+
     with open(output_file, "wb") as f:
         f.write(response.content)
 
 
-def play_audio(filename="response.ogg"):
+def play_audio(filename="response.mp3"):
+    stop_flag.clear()
     pygame.mixer.music.load(filename)
     pygame.mixer.music.play()
+
+    listener_thread = threading.Thread(target=listen_for_stop_command, daemon=True)
+    listener_thread.start()
+
     while pygame.mixer.music.get_busy():
+        if stop_flag.is_set():
+            pygame.mixer.music.stop()
+            print("Озвучка остановлена по команде")
+            break
         pygame.time.Clock().tick(10)
 
 
-# ---------- Уведомления ----------
+def listen_for_stop_command():
+    stop_words = ["стоп", "хватит", "перестань"]
+    samplerate = 16000
+    chunk_duration = 1.5
 
-def show_notification(title, message):
-    notify(title, message, duration="short")
+    while pygame.mixer.music.get_busy():
+        audio_chunk = sd.rec(int(chunk_duration * samplerate), samplerate=samplerate, channels=1, dtype='int16')
+        sd.wait()
+
+        temp_filename = "stop_check.wav"
+        write(temp_filename, samplerate, audio_chunk)
+        text = speech_to_text(temp_filename).lower()
+
+        if any(word in text for word in stop_words):
+            stop_flag.set()
+            return
+
+
+# ---------- Текстовое окно ----------
+
+def show_text_window(title, message, duration=6000):
+    def _show():
+        window = tk.Tk()
+        window.title(title)
+        window.attributes("-topmost", True)
+        window.geometry("650x300+50+50")
+
+        label = tk.Label(
+            window,
+            text=message,
+            wraplength=620,
+            justify="left",
+            padx=15,
+            pady=15,
+            font=("Segoe UI", 16)
+        )
+        label.pack(expand=True, fill="both")
+
+        window.after(duration, window.destroy)
+        window.mainloop()
+
+    threading.Thread(target=_show, daemon=True).start()
 
 
 # ---------- Системные команды ----------
@@ -200,27 +263,146 @@ def open_notepad():
     subprocess.Popen("notepad.exe")
 
 
+# ---------- Таймеры ----------
+
+def set_timer(minutes, label="Таймер"):
+    def timer_thread():
+        time.sleep(minutes * 60)
+        message = f"{label}: время вышло!"
+        respond(message)
+
+    thread = threading.Thread(target=timer_thread, daemon=True)
+    thread.start()
+    return f"Таймер на {minutes} минут запущен"
+
+
+# ---------- Заметки ----------
+
+def add_note(note_text):
+    with open(NOTES_FILE, "a", encoding="utf-8") as f:
+        f.write(note_text.strip() + "\n")
+    return f"Записал: {note_text}"
+
+
+def read_notes():
+    if not os.path.exists(NOTES_FILE):
+        return "Заметок пока нет"
+
+    with open(NOTES_FILE, "r", encoding="utf-8") as f:
+        notes = f.readlines()
+
+    if not notes:
+        return "Заметок пока нет"
+
+    return "Вот твои заметки: " + "; ".join(n.strip() for n in notes)
+
+
+# ---------- Погода ----------
+
+def get_weather(city="Moscow"):
+    url = "https://api.openweathermap.org/data/2.5/weather"
+    params = {
+        "q": city,
+        "appid": WEATHER_API_KEY,
+        "units": "metric",
+        "lang": "ru"
+    }
+    response = requests.get(url, params=params)
+
+    if response.status_code != 200:
+        return "Не удалось получить данные о погоде"
+
+    data = response.json()
+    temp = data["main"]["temp"]
+    feels_like = data["main"]["feels_like"]
+    description = data["weather"][0]["description"]
+
+    return f"В Москве сейчас {temp:.0f} градусов, ощущается как {feels_like:.0f}, {description}"
+
+
+# ---------- Управление музыкой ----------
+
+def media_play_pause():
+    pyautogui.press("playpause")
+    return "Пауза/воспроизведение"
+
+
+def media_next_track():
+    pyautogui.press("nexttrack")
+    return "Следующий трек"
+
+
+def media_prev_track():
+    pyautogui.press("prevtrack")
+    return "Предыдущий трек"
+
+
+# ---------- Буфер обмена ----------
+
+def copy_last_answer():
+    if last_answer:
+        pyperclip.copy(last_answer)
+        return "Скопировал последний ответ в буфер обмена"
+    return "Пока нечего копировать"
+
+
+# ---------- Обработка команд ----------
+
 def handle_command(user_text):
+    global last_answer
     text = user_text.lower()
 
     if "проводник" in text:
         open_explorer()
-        return "Открываю проводник"
+        answer = "Открываю проводник"
+
     elif "диспетчер задач" in text:
         open_task_manager()
-        return "Открываю диспетчер задач"
+        answer = "Открываю диспетчер задач"
+
     elif "блокнот" in text:
         open_notepad()
-        return "Открываю блокнот"
+        answer = "Открываю блокнот"
+
+    elif "таймер" in text:
+        match = re.search(r'(\d+)', text)
+        minutes = int(match.group(1)) if match else 5
+        answer = set_timer(minutes)
+
+    elif "запиши" in text or "заметка" in text:
+        note_text = text.replace("запиши", "").replace("заметка", "").strip()
+        answer = add_note(note_text)
+
+    elif "прочитай заметки" in text or "список заметок" in text:
+        answer = read_notes()
+
+    elif "погода" in text:
+        answer = get_weather()
+
+    elif "пауза" in text or "воспроизведение" in text:
+        answer = media_play_pause()
+
+    elif "следующий трек" in text or "следующая песня" in text:
+        answer = media_next_track()
+
+    elif "предыдущий трек" in text or "предыдущая песня" in text:
+        answer = media_prev_track()
+
+    elif "скопируй" in text and "ответ" in text:
+        answer = copy_last_answer()
+
     else:
-        return ask_gpt_with_tools(user_text)
+        answer = ask_gpt_with_tools(user_text)
+
+    last_answer = answer
+    return answer
 
 
-# ---------- Ответ пользователю (уведомление + голос) ----------
+# ---------- Ответ пользователю ----------
 
 def respond(answer):
     print(f"Джарвис: {answer}")
-    show_notification("Джарвис", answer)
+    show_text_window("Джарвис", answer)
     text_to_speech(answer)
     play_audio()
 
